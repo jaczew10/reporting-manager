@@ -7,7 +7,7 @@
     <title>Reporting Manager</title>
 
     <!-- STYLES -->
-    <link rel="stylesheet" href="static/style.css">
+    <link rel="stylesheet" href="static/style.css?v=2">
 
     <!-- ICONS -->
     <script src="https://unpkg.com/lucide@latest"></script>
@@ -58,6 +58,22 @@
 
                     <label class="input-label">Gemini API Key</label>
                     <input type="password" id="geminiKey">
+
+                    <div style="margin-top:20px; border-top:1px solid #333; padding-top:10px;">
+                        <label class="input-label" style="color:#a855f7">AWS S3 Settings</label>
+
+                        <label class="input-label">Access Key ID</label>
+                        <input type="password" id="awsAccessKey">
+
+                        <label class="input-label">Secret Access Key</label>
+                        <input type="password" id="awsSecretKey">
+
+                        <label class="input-label">Bucket Name</label>
+                        <input type="text" id="awsBucketName">
+
+                        <label class="input-label">Region (e.g. eu-central-1)</label>
+                        <input type="text" id="awsRegion">
+                    </div>
 
                     <button class="btn-small" onclick="saveSettings()">Zapisz</button>
                 </div>
@@ -167,9 +183,6 @@
                                     <div class="progress-fill" id="progressBar"></div>
                                 </div>
                             </div>
-
-                            <!-- Mini Log -->
-                            <div id="miniLog" class="log-box"></div>
 
                             <div id="runBtnContainer">
                                 <!-- Button Injected -->

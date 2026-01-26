@@ -68,6 +68,10 @@ class Settings(BaseModel):
     ftp_user: str
     ftp_pass: str
     gemini_key: str
+    aws_access_key: str = ""
+    aws_secret_key: str = ""
+    aws_bucket_name: str = ""
+    aws_region: str = ""
 
 # --- ENDPOINTS ---
 
@@ -130,20 +134,46 @@ def get_settings():
                     "ftp_host": data.get("ftp_host", "webas67993.tld.pl"),
                     "ftp_user": data.get("ftp_user", "jjaczewski"),
                     "ftp_pass": data.get("ftp_pass", ""),
-                    "gemini_key": data.get("gemini_key", "")
+                    "gemini_key": data.get("gemini_key", ""),
+                    "aws_access_key": data.get("aws_access_key", ""),
+                    "aws_secret_key": data.get("aws_secret_key", ""),
+                    "aws_bucket_name": data.get("aws_bucket_name", ""),
+                    "aws_region": data.get("aws_region", "")
                 }
         except:
             pass
-    return {"ftp_host": "webas67993.tld.pl", "ftp_user": "jjaczewski", "ftp_pass": "", "gemini_key": ""}
+    return {
+        "ftp_host": "webas67993.tld.pl", 
+        "ftp_user": "jjaczewski", 
+        "ftp_pass": "", 
+        "gemini_key": "",
+        "aws_access_key": "",
+        "aws_secret_key": "",
+        "aws_bucket_name": "",
+        "aws_region": ""
+    }
 
 @app.post("/settings")
 def save_settings(settings: Settings):
     data = {
-        "ftp_host": settings.ftp_host,
-        "ftp_user": settings.ftp_user, 
-        "ftp_pass": settings.ftp_pass, 
-        "gemini_key": settings.gemini_key
+        "ftp_host": settings.ftp_host.strip() if settings.ftp_host else "",
+        "ftp_user": settings.ftp_user.strip() if settings.ftp_user else "",
+        "ftp_pass": settings.ftp_pass.strip() if settings.ftp_pass else "",
+        "gemini_key": settings.gemini_key.strip() if settings.gemini_key else "",
+        "aws_access_key": settings.aws_access_key.strip() if settings.aws_access_key else "",
+        "aws_secret_key": settings.aws_secret_key.strip() if settings.aws_secret_key else "",
+        "aws_bucket_name": settings.aws_bucket_name.strip() if settings.aws_bucket_name else "",
+        "aws_region": settings.aws_region.strip() if settings.aws_region else ""
     }
+    
+    # DEBUG: Print masked keys to console
+    ak = data["aws_access_key"]
+    sk = data["aws_secret_key"]
+    reg = data["aws_region"]
+    print(f"DEBUG SAVE: AccessKey len={len(ak)} val={ak[:4]}...{ak[-4:] if len(ak)>4 else ''}")
+    print(f"DEBUG SAVE: SecretKey len={len(sk)} val={sk[:4]}...{sk[-4:] if len(sk)>4 else ''}")
+    print(f"DEBUG SAVE: Region='{reg}'")
+
     with open("secrets.json", "w") as f:
         json.dump(data, f)
     return {"status": "saved"}
@@ -167,6 +197,18 @@ async def execution_generator(project_id: str, date_from: str, date_to: str):
         
         ftp_pass = secrets.get("ftp_pass")
         gemini_key = secrets.get("gemini_key")
+        
+        # AWS Credentials
+        aws_access_key = secrets.get("aws_access_key")
+        aws_secret_key = secrets.get("aws_secret_key")
+        aws_bucket_name = secrets.get("aws_bucket_name")
+        aws_region = secrets.get("aws_region")
+
+        # DEBUG EXECUTION
+        print(f"DEBUG EXEC: AccessKey len={len(aws_access_key) if aws_access_key else 0}")
+        print(f"DEBUG EXEC: SecretKey len={len(aws_secret_key) if aws_secret_key else 0}")
+        print(f"DEBUG EXEC: Region='{aws_region}'")
+        print(f"DEBUG EXEC: Bucket='{aws_bucket_name}'")
         
         if not ftp_pass:
             yield f"data: {json.dumps({'error': 'Brak hasła FTP'})}\n\n"
@@ -338,6 +380,19 @@ async def execution_generator(project_id: str, date_from: str, date_to: str):
                          zipf.write(file_path, arcname)
             
             yield f"data: {json.dumps({'log': f'Utworzono ZIP: {zip_name}'})}\n\n"
+            
+            # S3 UPLOAD
+            s3_link = None
+            if aws_access_key and aws_secret_key and aws_bucket_name:
+                yield f"data: {json.dumps({'log': 'Wysyłanie na serwer S3...'})}\n\n"
+                try:
+                    from modules.s3_manager import S3Manager
+                    s3_mgr = S3Manager(aws_access_key, aws_secret_key, aws_region, aws_bucket_name)
+                    s3_link = s3_mgr.upload_and_generate_link(zip_path, zip_name)
+                    yield f"data: {json.dumps({'log': 'Wysłano na S3!'})}\n\n"
+                except Exception as s3_err:
+                     yield f"data: {json.dumps({'log': f'Błąd S3: {s3_err}'})}\n\n"
+            
         except Exception as ze:
              yield f"data: {json.dumps({'log': f'Błąd pakowania: {ze}'})}\n\n"
 
@@ -349,7 +404,7 @@ async def execution_generator(project_id: str, date_from: str, date_to: str):
         except:
             pass
             
-        yield f"data: {json.dumps({'log': 'Zakończono pomyślnie!', 'done': True, 'report': final_report_lines})}\n\n"
+        yield f"data: {json.dumps({'log': 'Zakończono pomyślnie!', 'done': True, 'report': final_report_lines, 's3_link': s3_link})}\n\n"
 
     except Exception as e:
         yield f"data: {json.dumps({'error': str(e)})}\n\n"
@@ -361,6 +416,16 @@ async def get_image(path: str):
     if os.path.exists(path) and os.path.isfile(path):
         return FileResponse(path)
     return HTTPException(status_code=404, detail="Image not found")
+
+@app.get("/download_zip")
+async def download_zip(filename: str):
+    user_docs = os.path.expanduser("~/Documents")
+    zip_dest_folder = os.path.join(user_docs, "Sorted Photos")
+    path = os.path.join(zip_dest_folder, filename)
+    
+    if os.path.exists(path) and os.path.isfile(path):
+        return FileResponse(path, filename=filename)
+    return HTTPException(status_code=404, detail="File not found")
 
 @app.post("/execute")
 async def execute_project(req: ExecutionRequest):

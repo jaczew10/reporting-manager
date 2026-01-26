@@ -128,6 +128,10 @@ async function fetchSettings() {
         document.getElementById('ftpUser').value = data.ftp_user || '';
         document.getElementById('ftpPass').value = data.ftp_pass || '';
         document.getElementById('geminiKey').value = data.gemini_key || '';
+        document.getElementById('awsAccessKey').value = data.aws_access_key || '';
+        document.getElementById('awsSecretKey').value = data.aws_secret_key || '';
+        document.getElementById('awsBucketName').value = data.aws_bucket_name || '';
+        document.getElementById('awsRegion').value = data.aws_region || '';
     } catch (e) { }
 }
 
@@ -136,7 +140,11 @@ async function saveSettings() {
         ftp_host: document.getElementById('ftpHost').value,
         ftp_user: document.getElementById('ftpUser').value,
         ftp_pass: document.getElementById('ftpPass').value,
-        gemini_key: document.getElementById('geminiKey').value
+        gemini_key: document.getElementById('geminiKey').value,
+        aws_access_key: document.getElementById('awsAccessKey').value,
+        aws_secret_key: document.getElementById('awsSecretKey').value,
+        aws_bucket_name: document.getElementById('awsBucketName').value,
+        aws_region: document.getElementById('awsRegion').value
     };
     await fetch(`${API_URL}/settings`, {
         method: 'POST',
@@ -372,7 +380,13 @@ function initExecution(id) {
     const dTo = document.getElementById(`dTo-${id}`).value;
     document.getElementById('procRange').innerText = `${dFrom} - ${dTo}`;
 
-    // Reset UI
+    // Update Sidebar Manually
+    document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
+    // Assumption: 2nd button is Process (index 1)
+    if (document.querySelectorAll('.nav-btn')[1]) {
+        document.querySelectorAll('.nav-btn')[1].classList.add('active');
+    }
+
     // Reset UI SAFE
     try {
         if (document.getElementById('statProc')) document.getElementById('statProc').innerText = '0';
@@ -382,18 +396,16 @@ function initExecution(id) {
         if (document.getElementById('progressBar')) document.getElementById('progressBar').style.width = '0%';
         if (document.getElementById('progressPercent')) document.getElementById('progressPercent').innerText = '0%';
 
-        // Try both IDs to be safe against cache
         const stEl = document.getElementById('statusText') || document.getElementById('progressText');
         if (stEl) stEl.innerText = 'Gotowy do startu';
 
-        if (document.getElementById('miniLog')) document.getElementById('miniLog').innerHTML = '';
         if (document.getElementById('countKeep')) document.getElementById('countKeep').innerText = '0';
         if (document.getElementById('countTrash')) document.getElementById('countTrash').innerText = '0';
     } catch (e) { console.warn("UI Reset warning:", e); }
 
-    // Reset toggle - AUTO SHOW
-    document.getElementById('bucketsWrapper').classList.remove('hidden');
-    document.getElementById('btnTogglePhotos').classList.add('active');
+    // Reset toggle - AUTO HIDE (User Request 3)
+    document.getElementById('bucketsWrapper').classList.add('hidden');
+    document.getElementById('btnTogglePhotos').classList.remove('active');
 
     // Reset Data
     allKeep = [];
@@ -403,13 +415,32 @@ function initExecution(id) {
     renderBucket('keep');
     renderBucket('trash');
 
+    // INITIAL BUTTON STATE (User Request: Visible but inactive)
     const btnContainer = document.getElementById('runBtnContainer');
     btnContainer.innerHTML = `
-        <button class="btn-primary" style="padding: 12px 30px; font-size: 1.1rem;" onclick="runTask('${id}', '${dFrom}', '${dTo}')">
-            Uruchom Zadanie 🚀
-        </button>
+        <div style="display:flex; gap:12px; align-items:center;">
+            <!-- Download Button -->
+            <button class="btn-primary disabled-look" disabled 
+                    style="height:44px; display:flex; gap:10px; align-items:center; opacity:0.5; cursor:not-allowed; padding: 0 24px;">
+                <i data-lucide="download"></i> Pobierz ZIP
+            </button>
+            
+            <!-- Link Copy Group -->
+            <div style="position:relative; width:400px; height:44px; visibility:hidden;">
+                <input type="text" class="link-bar" placeholder="Link do zdjęć..." readonly 
+                       style="width:100%; height:100%; background:#1a1a1a; border:1px solid #333; color:#aaa; padding:0 45px 0 15px; border-radius:6px; font-size:0.9rem;">
+                <button class="btn-icon" disabled style="position:absolute; right:6px; top:50%; transform:translateY(-50%); color:#555;">
+                    <i data-lucide="copy" style="width:18px;"></i>
+                </button>
+            </div>
+        </div>
     `;
+    lucide.createIcons();
+
     switchTab('process');
+
+    // AUTO RUN (User Request 2)
+    runTask(id, dFrom, dTo);
 }
 
 function togglePhotos() {
@@ -422,7 +453,7 @@ function togglePhotos() {
 }
 
 async function runTask(id, dFrom, dTo) {
-    document.getElementById('runBtnContainer').innerHTML = '<button class="btn-secondary" disabled>Przetwarzanie...</button>';
+    // DO NOT overwrite button here, keep the disabled state visible
 
     // Clear data again to be safe
     allKeep = [];
@@ -432,8 +463,8 @@ async function runTask(id, dFrom, dTo) {
     renderBucket('keep');
     renderBucket('trash');
 
-    const logBox = document.getElementById('miniLog');
     let currentTotal = 0;
+    let lastZipName = null;
 
     startDlTimer(); // START INPUT TIMER
 
@@ -468,19 +499,53 @@ async function runTask(id, dFrom, dTo) {
                     const msg = JSON.parse(jsonStr);
 
                     if (msg.log) {
-                        const p = document.createElement('div');
-                        p.innerText = `> ${msg.log}`;
-                        logBox.appendChild(p);
-                        logBox.scrollTop = logBox.scrollHeight;
+                        // User Request 2: "Mozemy usunac terminal" -> Removed logic logging to miniLog
 
                         if (msg.done) {
                             stopTimers();
                             document.getElementById('statusText').innerText = "Gotowe!";
                             document.getElementById('progressBar').style.width = '100%';
+
+                            // FINAL ACTIVE STATE
+                            const btnContainer = document.getElementById('runBtnContainer');
+
+                            let dlHtml = '';
+                            if (lastZipName) {
+                                dlHtml = `
+                                    <button class="btn-primary blink-effect" onclick="window.location.href='${API_URL}/download_zip?filename=${lastZipName}'" 
+                                            style="height:44px; display:flex; gap:10px; align-items:center; padding: 0 24px;">
+                                        <i data-lucide="download"></i> Pobierz ZIP
+                                    </button>
+                                `;
+                            } else {
+                                dlHtml = `<button class="btn-primary" disabled style="height:44px; opacity:0.5; padding: 0 24px;">Brak ZIP</button>`;
+                            }
+
+                            // Mock link for user to copy (or empty as requested, but "Copy" implies functionality)
+                            // User said: "pasek z linkiem do skopiowania... ale jak narazie niech bedzie pusty"
+                            // But usually you want to copy something. I'll leave it empty/placeholder.
+                            // Assuming logic for link will be added later.
+
+                            btnContainer.innerHTML = `
+                                <div style="display:flex; gap:12px; align-items:center; animation: fadeIn 0.5s;">
+                                    ${dlHtml}
+                                    
+                                    <div style="position:relative; width:400px; height:44px;">
+                                        <input type="text" id="finalLinkInput" class="link-bar" placeholder="Link do zdjęć (Wymaga konfiguracji AWS S3)" readonly value="${msg.s3_link || ''}"
+                                               style="width:100%; height:100%; background:#1a1a1a; border:1px solid #333; color:#eee; padding:0 45px 0 15px; border-radius:6px; font-size:0.9rem;">
+                                        <button class="btn-icon hover-scale" onclick="copyLinkCurrent()" 
+                                                style="position:absolute; right:6px; top:50%; transform:translateY(-50%); color:#a855f7; background:transparent; border:none; cursor:pointer;">
+                                            <i data-lucide="copy" style="width:20px;"></i>
+                                        </button>
+                                    </div>
+                                </div>
+                            `;
+                            lucide.createIcons();
                         }
+
                         if (msg.log.startsWith("Utworzono ZIP: ")) {
-                            const zipName = msg.log.replace("Utworzono ZIP: ", "");
-                            showZipPopup(zipName);
+                            lastZipName = msg.log.replace("Utworzono ZIP: ", "").trim();
+                            showZipPopup(lastZipName);
                         }
                     }
 
@@ -493,8 +558,8 @@ async function runTask(id, dFrom, dTo) {
                     if (msg.type === 'image_result') {
                         // Update Stats
                         const pct = Math.round((msg.current / msg.total) * 100);
-                        document.getElementById('progressBar').style.width = `${pct}%`;
-                        document.getElementById('progressPercent').innerText = `${pct}%`;
+                        if (document.getElementById('progressBar')) document.getElementById('progressBar').style.width = `${pct}%`;
+                        if (document.getElementById('progressPercent')) document.getElementById('progressPercent').innerText = `${pct}%`;
 
                         // Timer updates text, so we don't overwrite it here unless we want to
                         // 4. Removed the `pct < 100` check that overwrites `progressText`
@@ -506,7 +571,10 @@ async function runTask(id, dFrom, dTo) {
                             animateValue(document.getElementById('statTot'), currentTotal, msg.total, 1000);
                             currentTotal = msg.total;
                         }
-                        document.getElementById('statProc').innerText = msg.current;
+
+                        // FIX: Direct check instead of missing function
+                        const sp = document.getElementById('statProc');
+                        if (sp) sp.innerText = msg.current;
 
                         // Handle Data
                         const isKeep = (msg.decision === 'keep');
@@ -525,27 +593,84 @@ async function runTask(id, dFrom, dTo) {
                         targetArr.push(item);
 
                         // Update text counters
-                        targetCount.innerText = targetArr.length;
-                        targetHeaderCount.innerText = targetArr.length;
+                        if (targetCount) targetCount.innerText = targetArr.length;
+                        if (targetHeaderCount) targetHeaderCount.innerText = targetArr.length;
 
                         // Optimized Render
                         prependImageToGrid(isKeep ? 'keep' : 'trash', item); // 3. Replaced renderBucket with prependImageToGrid
                     }
                 } catch (e) {
-                    // console.error("JSON Parse Error on chunk:", jsonStr, e); // Kept original error logging
+                    console.error("JSON/Loop Error:", e);
                 }
             }
         }
     } catch (e) {
-        if (logBox) logBox.innerHTML += `<div style="color:red">Error: ${e}</div>`;
-        stopTimer(); // 2. Call stopTimer() on error.
+        stopTimers();
+        console.error("Fetch Error:", e);
+    }
+}
+
+function copyLinkCurrent() {
+    const input = document.getElementById('finalLinkInput');
+    // Find button: it's the next sibling in the DOM structure
+    const btn = input ? input.nextElementSibling : null;
+
+    if (!input || !input.value) {
+        // Feedback for empty link
+        if (btn) {
+            const originalIcon = btn.innerHTML;
+            btn.innerHTML = `<i data-lucide="x" style="color:#ef4444; width:20px;"></i>`; // Red X
+            lucide.createIcons();
+            setTimeout(() => {
+                btn.innerHTML = originalIcon;
+                lucide.createIcons();
+            }, 2000);
+        }
+        return;
     }
 
-    document.getElementById('runBtnContainer').innerHTML = `
-        <button class="btn-primary" style="padding: 12px 30px; font-size: 1.1rem;" onclick="runTask('${id}', '${dFrom}', '${dTo}')">
-            Uruchom Ponownie 🚀
-        </button>
-    `;
+    // Attempt Copy
+    input.select();
+    input.setSelectionRange(0, 99999); // Mobile compatibility
+
+    let success = false;
+    try {
+        if (navigator.clipboard && window.isSecureContext) {
+            navigator.clipboard.writeText(input.value).then(() => showSuccess(btn, input)).catch(() => tryFallback(btn, input));
+            return;
+        } else {
+            tryFallback(btn, input);
+        }
+    } catch (e) {
+        tryFallback(btn, input);
+    }
+}
+
+function tryFallback(btn, input) {
+    try {
+        document.execCommand('copy');
+        showSuccess(btn, input);
+    } catch (err) {
+        alert("Nie udało się skopiować automatycznie. Zaznaczono tekst do skopiowania.");
+    }
+}
+
+function showSuccess(btn, input) {
+    if (!btn) return;
+    const originalIcon = btn.innerHTML;
+    btn.innerHTML = `<i data-lucide="check" style="color:#4ade80; width:20px;"></i>`; // Green Check
+    lucide.createIcons();
+
+    // Visual highlight
+    const originalBg = input.style.background;
+    input.style.transition = "background 0.3s";
+    input.style.background = "#064e3b"; // dark green bg
+
+    setTimeout(() => {
+        btn.innerHTML = originalIcon;
+        input.style.background = originalBg;
+        lucide.createIcons();
+    }, 2000);
 }
 
 // TIMER UTILS
