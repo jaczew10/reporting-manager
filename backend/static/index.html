@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="pl">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Reporting Manager</title>
+
+    <!-- STYLES -->
+    <link rel="stylesheet" href="static/style.css">
+
+    <!-- ICONS -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- LOGIC -->
+    <!-- LOGIC -->
+    <script src="static/app.js?v=2" defer></script>
+</head>
+
+<body>
+
+    <div class="app-container">
+
+        <!-- SIDEBAR -->
+        <nav class="sidebar">
+            <h1 class="brand">Reporting Manager</h1>
+
+            <button class="nav-btn active" onclick="switchTab('projects', this)">
+                <i data-lucide="folder"></i> Projekty
+            </button>
+            <button class="nav-btn" onclick="switchTab('process', this)">
+                <i data-lucide="cpu"></i> Procesowanie
+            </button>
+            <button class="nav-btn" onclick="initCreator()">
+                <i data-lucide="plus-circle"></i> Nowy Projekt
+            </button>
+
+            <!-- SETTINGS AREA -->
+            <div class="settings-area">
+                <div class="settings-header" onclick="toggleSettings()">
+                    <span>Ustawienia</span>
+                    <i data-lucide="chevron-up" class="settings-arrow"></i>
+                </div>
+
+                <div id="settingsContent" class="settings-content">
+                    <!-- Legacy Inputs for JS Init Compatibility -->
+                    <input type="hidden" id="execDateFrom">
+                    <input type="hidden" id="execDateTo">
+
+                    <label class="input-label">FTP Host</label>
+                    <input type="text" id="ftpHost" placeholder="ftp.example.com">
+
+                    <label class="input-label">FTP User</label>
+                    <input type="text" id="ftpUser">
+
+                    <label class="input-label">FTP Pass</label>
+                    <input type="password" id="ftpPass">
+
+                    <label class="input-label">Gemini API Key</label>
+                    <input type="password" id="geminiKey">
+
+                    <button class="btn-small" onclick="saveSettings()">Zapisz</button>
+                </div>
+            </div>
+        </nav>
+
+        <!-- MAIN CONTENT -->
+        <main class="content">
+
+            <!-- VIEW: PROJECTS LIST -->
+            <div id="tab-projects" class="tab-content active">
+                <div class="header-row">
+                    <h2>Moje Projekty</h2>
+                </div>
+                <div id="projectsList" class="projects-grid">
+                    <!-- JS Injected -->
+                </div>
+            </div>
+
+            <!-- VIEW: CREATOR / EDITOR -->
+            <div id="tab-create" class="tab-content">
+                <div class="header-row">
+                    <h2 id="creatorTitle">Nowy Projekt</h2>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Nazwa Projektu</label>
+                        <input type="text" id="projName" placeholder="Np. Princes Food">
+                    </div>
+                </div>
+
+                <div class="form-row">
+                    <div class="form-group">
+                        <label>Manager (Imię Nazwisko)</label>
+                        <input type="text" id="projManager">
+                    </div>
+                    <div class="form-group">
+                        <label>DW (Opcjonalnie)</label>
+                        <input type="text" id="projCc">
+                    </div>
+                </div>
+
+                <h3>Struktura Folderów</h3>
+                <div id="foldersContainer">
+                    <!-- JS Injected -->
+                </div>
+
+                <button class="btn-dashed" onclick="addFolder()">+ Dodaj kolejny folder</button>
+
+                <div class="actions-row">
+                    <button class="btn-secondary hidden" onclick="cancelEdit()" id="cancelEditBtn">Anuluj</button>
+                    <button class="btn-primary" onclick="saveProject()">Zapisz Projekt</button>
+                </div>
+            </div>
+
+            <!-- VIEW: PROCESS ENGINE -->
+            <div id="tab-process" class="tab-content">
+                <!-- Hidden until initialized -->
+                <div id="processInfo" class="process-container hidden">
+
+                    <!-- Header -->
+                    <div class="header-row">
+                        <div>
+                            <h2>Procesowanie</h2>
+                            <div style="color:#aaa; font-size:0.9rem; margin-top:5px;">
+                                Projekt: <strong id="procName" style="color:white">...</strong> | Zakres: <span
+                                    id="procRange">...</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Dashboard -->
+                    <div class="process-dashboard">
+                        <div class="proc-summary">
+                            <!-- Compact Stats -->
+                            <div class="process-stats compact">
+                                <div class="stat-box mini">
+                                    <div style="font-size:1.5rem; font-weight:bold; color:#a855f7">
+                                        <span id="statProc">0</span> / <span id="statTot">0</span>
+                                    </div>
+                                    <span class="stat-label">Postęp</span>
+                                </div>
+                                <div class="stat-box mini">
+                                    <span class="stat-val" id="statKeep" style="color:#4ade80">0</span>
+                                    <span class="stat-label">KEEP</span>
+                                </div>
+                                <div class="stat-box mini">
+                                    <span class="stat-val" id="statTrash" style="color:#f87171">0</span>
+                                    <span class="stat-label">TRASH</span>
+                                </div>
+                            </div>
+
+                            <div class="progress-section compact">
+                                <div class="progress-info" style="display:flex; flex-direction:column; gap:5px">
+                                    <div style="display:flex; justify-content:space-between">
+                                        <span id="statusText" style="color:#aaa">Oczekiwanie...</span>
+                                        <span id="progressPercent">0%</span>
+                                    </div>
+                                    <div
+                                        style="display:flex; gap:15px; font-size:0.8rem; font-family:monospace; color:#666">
+                                        <span id="timerDownload" class="hidden">⬇️ DL: 00:00</span>
+                                        <span id="timerAI" class="hidden">🤖 AI: 00:00</span>
+                                    </div>
+                                </div>
+                                <div class="progress-track" style="margin-top:5px">
+                                    <div class="progress-fill" id="progressBar"></div>
+                                </div>
+                            </div>
+
+                            <!-- Mini Log -->
+                            <div id="miniLog" class="log-box"></div>
+
+                            <div id="runBtnContainer">
+                                <!-- Button Injected -->
+                            </div>
+                        </div>
+
+                        <!-- Controls -->
+                        <div class="proc-controls">
+                            <button id="btnTogglePhotos" class="btn-toggle-photos active" onclick="togglePhotos()">
+                                <i data-lucide="image" style="width:24px; height:24px; margin-bottom:5px;"></i>
+                                Zdjęcia
+                                <i data-lucide="chevron-up" id="iconTogglePhotos"
+                                    style="margin-top:5px; transition: transform 0.2s"></i>
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- Buckets -->
+                    <div id="bucketsWrapper" class="buckets-wrapper">
+                        <div class="buckets-container">
+                            <!-- Keep Bucket -->
+                            <div class="bucket">
+                                <div class="bucket-header keep">
+                                    <span><i data-lucide="check-square"
+                                            style="width:16px; margin-right:5px; vertical-align:text-bottom"></i>
+                                        KEEP</span>
+                                    <span id="countKeep">0</span>
+                                </div>
+                                <div id="gridKeep" class="bucket-grid scrollbar-hide"></div>
+                                <!-- Pagination -->
+                                <div class="pagination-controls">
+                                    <button class="btn-page" onclick="changePage('keep', -1)"><i
+                                            data-lucide="chevron-left"></i></button>
+                                    <span id="pageKeep">Strona 1 / 1</span>
+                                    <button class="btn-page" onclick="changePage('keep', 1)"><i
+                                            data-lucide="chevron-right"></i></button>
+                                </div>
+                            </div>
+
+                            <!-- Trash Bucket -->
+                            <div class="bucket">
+                                <div class="bucket-header trash">
+                                    <span><i data-lucide="trash-2"
+                                            style="width:16px; margin-right:5px; vertical-align:text-bottom"></i>
+                                        TRASH</span>
+                                    <span id="countTrash">0</span>
+                                </div>
+                                <div id="gridTrash" class="bucket-grid scrollbar-hide"></div>
+                                <div class="pagination-controls">
+                                    <button class="btn-page" onclick="changePage('trash', -1)"><i
+                                            data-lucide="chevron-left"></i></button>
+                                    <span id="pageTrash">Strona 1 / 1</span>
+                                    <button class="btn-page" onclick="changePage('trash', 1)"><i
+                                            data-lucide="chevron-right"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- ZIP POPUP -->
+    <div id="zipPopup" class="zip-popup hidden">
+        <h3 style="margin:0 0 10px 0; display:flex; align-items:center; gap:10px">
+            <i data-lucide="archive"></i> Gotowe!
+        </h3>
+        <p style="margin:0 0 10px 0; font-size:0.9rem; line-height:1.4">
+            Plik ZIP został utworzony w folderze:<br>
+            <strong id="zipPathDisplay">...</strong>
+        </p>
+        <div style="font-size:0.8rem; opacity:0.8">
+            Zniknie za <span id="popupTimer">5</span>s
+        </div>
+    </div>
+
+    <!-- LIGHTBOX -->
+    <div id="lightbox" class="lightbox-modal" onclick="closeLightbox()">
+        <img id="lightboxImg" class="lightbox-img">
+    </div>
+
+</body>
+
+</html>

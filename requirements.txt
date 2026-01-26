@@ -1,0 +1,7 @@
+streamlit
+google-generativeai
+selenium
+pandas
+pillow
+python-dateutil
+watchdog

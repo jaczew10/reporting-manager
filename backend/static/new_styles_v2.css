@@ -1,0 +1,110 @@
+
+/* PROCESS VIEW - COMPACT */
+.process-container {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    height: 100%;
+}
+
+.process-dashboard {
+    display: flex;
+    gap: 15px;
+}
+
+.proc-summary {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.proc-controls {
+    width: 120px;
+    display: flex;
+    flex-direction: column;
+}
+
+.btn-toggle-photos {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    flex: 1;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: 0.2s;
+    font-size: 0.9rem;
+}
+.btn-toggle-photos:hover {
+    background: #27272a;
+    border-color: var(--primary);
+}
+.btn-toggle-photos.active {
+    background: #27272a;
+    border-color: var(--primary);
+    color: var(--primary);
+}
+.btn-toggle-photos.active #iconTogglePhotos {
+    transform: rotate(180deg);
+}
+
+/* COMPACT STATS */
+.process-stats.compact {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 10px;
+}
+
+.stat-box.mini {
+    padding: 12px;
+    border-radius: 8px;
+}
+.stat-box.mini .stat-val {
+    font-size: 1.5rem; /* Smaller than 2.5rem */
+}
+.stat-box.mini .stat-label {
+    font-size: 0.75rem;
+}
+
+.progress-section.compact {
+    padding: 10px 15px;
+}
+
+/* EXPANDABLE BUCKETS */
+.buckets-wrapper {
+    overflow: hidden;
+    transition: all 0.3s ease-in-out;
+}
+.buckets-wrapper.hidden {
+    display: none;
+}
+
+.buckets-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 15px;
+    height: 500px; /* Fixed height when visible */
+}
+
+/* KEEP EXISTING BUCKET STYLES BUT ADJUST HEIGHT */
+.bucket {
+    background: #18181b;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    height: 100%;
+}
+.bucket-grid {
+    padding: 10px;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(100px, 1fr)); /* Slightly larger thumbs */
+    gap: 10px;
+    overflow-y: auto;
+    flex: 1;
+}

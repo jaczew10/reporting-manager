@@ -1,0 +1,56 @@
+[
+    {
+        "id": "a7626cce-39c2-44ec-a95f-02b30aa6eefe",
+        "name": "Faktoria Win",
+        "manager": "m.patoka@asmsfa.pl",
+        "cc": "m.patoka@asmsfa.pl,   r.zubert@asmsfa.pl,   n.maslarz@asmsfa.pl",
+        "structure": [
+            {
+                "id": "1da7261e-8655-43d8-82bc-772d45b11f07",
+                "paths": [
+                    "/{yyyy}/faktoria_win/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty",
+                    "/{yyyy}/{quarter}/faktoria_win/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty"
+                ]
+            }
+        ],
+        "structure_raw": [
+            {
+                "id": "1da7261e-8655-43d8-82bc-772d45b11f07",
+                "paths": [
+                    {
+                        "code": "faktoria_win",
+                        "suffix": "ankiety-czastkowe/ankieta-do-wizyty"
+                    }
+                ]
+            }
+        ],
+        "has_photos": true
+    },
+    {
+        "id": "50571e90-e8c6-47c0-a075-c909916d7e92",
+        "name": "Princes Food",
+        "manager": "s.kwiatkowska@asmsfa.pl",
+        "cc": "m.patoka@asmsfa.pl,   r.zubert@asmsfa.pl,   n.maslarz@asmsfa.pl",
+        "structure": [
+            {
+                "id": "fcb866f4-f3cd-4369-9f4b-00d965634158",
+                "paths": [
+                    "/{yyyy}/princes/{yyyy-MM}/ankiety-czastkowe/raport-zdjeciowy_nowa",
+                    "/{yyyy}/{quarter}/princes/{yyyy-MM}/ankiety-czastkowe/raport-zdjeciowy_nowa"
+                ]
+            }
+        ],
+        "structure_raw": [
+            {
+                "id": "fcb866f4-f3cd-4369-9f4b-00d965634158",
+                "paths": [
+                    {
+                        "code": "princes",
+                        "suffix": "ankiety-czastkowe/raport-zdjeciowy_nowa"
+                    }
+                ]
+            }
+        ],
+        "has_photos": true
+    }
+]
