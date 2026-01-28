@@ -102,27 +102,51 @@
                 <div class="form-row">
                     <div class="form-group">
                         <label>Nazwa Projektu</label>
-                        <input type="text" id="projName" placeholder="Np. Princes Food">
+                        <input type="text" id="projName" placeholder="Np. Faktoria Win">
                     </div>
                 </div>
 
                 <div class="form-row">
                     <div class="form-group">
-                        <label>Manager (Imię Nazwisko)</label>
-                        <input type="text" id="projManager">
+                        <label>Project Manager (email)</label>
+                        <input type="text" id="projManager" placeholder="Np. projectmanager@asmsfa.pl">
                     </div>
                     <div class="form-group">
-                        <label>DW (Opcjonalnie)</label>
-                        <input type="text" id="projCc">
+                        <label>CC</label>
+                        <input type="text" id="projCc" placeholder="Np. dok1@asmsfa.pl, dok2@asmsfa.pl">
                     </div>
                 </div>
 
-                <h3>Struktura Folderów</h3>
-                <div id="foldersContainer">
-                    <!-- JS Injected -->
-                </div>
+                <div style="margin-top:20px; border-top:1px solid #333; margin-bottom: 20px;"></div>
 
+                <h3>Struktura Folderów</h3>
+                <div id="foldersContainer"></div>
                 <button class="btn-dashed" onclick="addFolder()">+ Dodaj kolejny folder</button>
+
+                <div style="margin-top:20px; border-top:1px solid #333; margin-bottom: 20px;"></div>
+
+                <h3>Power BI - link</h3>
+                <div id="powerBiContainer"></div>
+                <button class="btn-dashed" onclick="addPowerBiLink()">+ Dodaj kolejny Link</button>
+
+                <div style="margin-top:20px; border-top:1px solid #333; margin-bottom: 20px;"></div>
+
+                <h3>Excel - ścieżka</h3>
+                <div id="excelPathsContainer"></div>
+                <button class="btn-dashed" onclick="addExcelPath()">+ Dodaj kolejną ścieżkę</button>
+
+                <div style="margin-top:20px; border-top:1px solid #333; margin-bottom: 20px;"></div>
+
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:10px;">
+                    <h3 style="margin:0; white-space:nowrap;">E-mail - treść</h3>
+                    <button class="btn-secondary" onclick="generateEmailTemplate()"
+                        style="font-size:0.75rem; padding: 4px 12px; height: 30px; display:flex; gap:6px; align-items:center;">
+                        <i data-lucide="refresh-cw" style="width:12px;"></i> Generuj Domyślną
+                    </button>
+                </div>
+                <textarea id="emailTemplate" rows="8"
+                    style="width:100%; background:#1a1a1a; border:1px solid #333; color:#eee; padding:10px; border-radius:6px; resize:vertical;"
+                    placeholder="Tu pojawi się treść maila..."></textarea>
 
                 <div class="actions-row">
                     <button class="btn-secondary hidden" onclick="cancelEdit()" id="cancelEditBtn">Anuluj</button>
@@ -147,10 +171,15 @@
                     </div>
 
                     <!-- Dashboard -->
-                    <div class="process-dashboard">
-                        <div class="proc-summary">
-                            <!-- Compact Stats -->
-                            <div class="process-stats compact">
+                    <!-- Dashboard -->
+                    <div class="process-dashboard" style="display: flex; gap: 15px; align-items: stretch;">
+
+                        <!-- LEFT COLUMN: Stats, Progress, Output -->
+                        <div class="proc-main-col" style="flex: 1; display: flex; flex-direction: column; gap: 15px;">
+
+                            <!-- 1. Stats -->
+                            <div class="process-stats compact"
+                                style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;">
                                 <div class="stat-box mini">
                                     <div style="font-size:1.5rem; font-weight:bold; color:#a855f7">
                                         <span id="statProc">0</span> / <span id="statTot">0</span>
@@ -167,35 +196,50 @@
                                 </div>
                             </div>
 
-                            <div class="progress-section compact">
-                                <div class="progress-info" style="display:flex; flex-direction:column; gap:5px">
-                                    <div style="display:flex; justify-content:space-between">
-                                        <span id="statusText" style="color:#aaa">Oczekiwanie...</span>
-                                        <span id="progressPercent">0%</span>
-                                    </div>
-                                    <div
-                                        style="display:flex; gap:15px; font-size:0.8rem; font-family:monospace; color:#666">
+                            <!-- 2. Progress Bar & Timers -->
+                            <div class="progress-section compact"
+                                style="background:#18181b; padding:10px 15px; border-radius:8px; border:1px solid #27272a;">
+                                <div class="progress-info"
+                                    style="display:flex; justify-content:space-between; align-items:center; margin-bottom:5px; font-size:0.85rem;">
+                                    <span id="statusText" style="color:#aaa">Oczekiwanie...</span>
+
+                                    <!-- Timers Group -->
+                                    <div style="display:flex; gap:15px; font-family:monospace; color:#666;">
                                         <span id="timerDownload" class="hidden">⬇️ DL: 00:00</span>
                                         <span id="timerAI" class="hidden">🤖 AI: 00:00</span>
+                                        <span id="timerUpload" class="hidden">☁️ UP: 00:00</span>
                                     </div>
+
+                                    <span id="progressPercent" style="color:#aaa">0%</span>
                                 </div>
-                                <div class="progress-track" style="margin-top:5px">
-                                    <div class="progress-fill" id="progressBar"></div>
+                                <div class="progress-track"
+                                    style="height:8px; background:#27272a; border-radius:4px; overflow:hidden;">
+                                    <div class="progress-fill" id="progressBar"
+                                        style="height:100%; width:0%; background:#3b82f6; transition:width 0.3s;"></div>
                                 </div>
                             </div>
 
-                            <div id="runBtnContainer">
-                                <!-- Button Injected -->
+                            <!-- 3. Output Buttons (ZIP, Links) -->
+                            <div id="runBtnContainer" style="min-height:44px; display:flex; align-items:center;">
+                                <!-- Dynamic Content -->
                             </div>
                         </div>
 
-                        <!-- Controls -->
-                        <div class="proc-controls">
-                            <button id="btnTogglePhotos" class="btn-toggle-photos active" onclick="togglePhotos()">
-                                <i data-lucide="image" style="width:24px; height:24px; margin-bottom:5px;"></i>
+                        <!-- RIGHT COLUMN: Control Buttons -->
+                        <div class="proc-controls"
+                            style="width: 140px; min-width: 140px; flex-shrink: 0; display: flex; flex-direction: column; gap: 10px;">
+                            <button class="btn-control-main" id="btnEmail" onclick="openMailClient()" disabled
+                                style="flex: 1;">
+                                <i data-lucide="mail" style="width:24px; height:24px;"></i>
+                                Email
+                            </button>
+
+                            <button id="btnTogglePhotos" class="btn-control-main active" onclick="togglePhotos()"
+                                style="flex: 1;">
+                                <i data-lucide="image" style="width:24px; height:24px;"></i>
                                 Zdjęcia
                                 <i data-lucide="chevron-up" id="iconTogglePhotos"
-                                    style="margin-top:5px; transition: transform 0.2s"></i>
+                                    style="transition: transform 0.2s; width:14px; height:14px;"></i>
                             </button>
                         </div>
                     </div>

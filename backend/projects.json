@@ -24,7 +24,10 @@
                 ]
             }
         ],
-        "has_photos": true
+        "has_photos": true,
+        "power_bi_links": [],
+        "excel_paths": [],
+        "email_template": "Cześć, przesyłam raport Faktoria Win\n\nLink do zdjęć: "
     },
     {
         "id": "50571e90-e8c6-47c0-a075-c909916d7e92",
@@ -51,6 +54,81 @@
                 ]
             }
         ],
-        "has_photos": true
+        "has_photos": true,
+        "power_bi_links": [
+            "https://app.powerbi.com/view?r=eyJrIjoiMTdiNGFiZGEtOTA3Mi00YWMzLTgzYWEtMmI4MjVmY2VmNWEwIiwidCI6ImMyODMzOWI1LWJjMjMtNDdjNC1iZDQyLTZhYzE0NjRjM2Y3MCJ9"
+        ],
+        "excel_paths": [],
+        "email_template": "Cześć, przesyłam raport Princes Food\n\nLink do Power BI: https://app.powerbi.com/view?r=eyJrIjoiMTdiNGFiZGEtOTA3Mi00YWMzLTgzYWEtMmI4MjVmY2VmNWEwIiwidCI6ImMyODMzOWI1LWJjMjMtNDdjNC1iZDQyLTZhYzE0NjRjM2Y3MCJ9\n\nLink do zdjęć: "
+    },
+    {
+        "id": "c99bf28a-10a2-4e31-af8b-cce884101461",
+        "name": "Dilmah",
+        "manager": "p.redlikowska@asmsfa.pl",
+        "cc": "m.patoka@asmsfa.pl,   r.zubert@asmsfa.pl,   n.maslarz@asmsfa.pl",
+        "structure": [
+            {
+                "id": "b2a4ba4b-638d-4bc7-88d3-de1d0212d4cb",
+                "name": "Raport Zdjęciowy",
+                "paths": [
+                    "/{yyyy}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-poza-auchan",
+                    "/{yyyy}/{quarter}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-poza-auchan",
+                    "/{yyyy}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-auchan",
+                    "/{yyyy}/{quarter}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-auchan",
+                    "/{yyyy}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty-poza-auchan",
+                    "/{yyyy}/{quarter}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty-poza-auchan",
+                    "/{yyyy}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty-auchan",
+                    "/{yyyy}/{quarter}/dilmah/{yyyy-MM}/ankiety-czastkowe/ankieta-do-wizyty-auchan"
+                ]
+            },
+            {
+                "id": "662282c6-a7ba-49b1-9b9e-054168b8e412",
+                "name": "Luxure Presenter",
+                "paths": [
+                    "/{yyyy}/dilmah/{yyyy-MM}/ankiety-czastkowe/luxury-presenter-dilmah-badanie-dostepnosci",
+                    "/{yyyy}/{quarter}/dilmah/{yyyy-MM}/ankiety-czastkowe/luxury-presenter-dilmah-badanie-dostepnosci"
+                ]
+            }
+        ],
+        "structure_raw": [
+            {
+                "id": "b2a4ba4b-638d-4bc7-88d3-de1d0212d4cb",
+                "name": "Raport Zdjęciowy",
+                "paths": [
+                    {
+                        "code": "dilmah",
+                        "suffix": "ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-poza-auchan"
+                    },
+                    {
+                        "code": "dilmah",
+                        "suffix": "ankiety-czastkowe/ankieta-zdjeciowa-ekspozycji-auchan"
+                    },
+                    {
+                        "code": "dilmah",
+                        "suffix": "ankiety-czastkowe/ankieta-do-wizyty-poza-auchan"
+                    },
+                    {
+                        "code": "dilmah",
+                        "suffix": "ankiety-czastkowe/ankieta-do-wizyty-auchan"
+                    }
+                ]
+            },
+            {
+                "id": "662282c6-a7ba-49b1-9b9e-054168b8e412",
+                "name": "Luxure Presenter",
+                "paths": [
+                    {
+                        "code": "dilmah",
+                        "suffix": "ankiety-czastkowe/luxury-presenter-dilmah-badanie-dostepnosci"
+                    }
+                ]
+            }
+        ],
+        "has_photos": true,
+        "power_bi_links": [
+            "https://app.powerbi.com/view?r=eyJrIjoiYmU5ZDQ3NzAtNTI2MC00MjlkLWFjNDgtOTA1YzgxYmQ5ZDc2IiwidCI6ImMyODMzOWI1LWJjMjMtNDdjNC1iZDQyLTZhYzE0NjRjM2Y3MCJ9"
+        ],
+        "excel_paths": [],
+        "email_template": "Cześć, przesyłam raport Dilmah\n\nLink do Power BI: https://app.powerbi.com/view?r=eyJrIjoiYmU5ZDQ3NzAtNTI2MC00MjlkLWFjNDgtOTA1YzgxYmQ5ZDc2IiwidCI6ImMyODMzOWI1LWJjMjMtNDdjNC1iZDQyLTZhYzE0NjRjM2Y3MCJ9\n\nLink do zdjęć: \n\nLink do zdjęć: \n\n"
     }
 ]

@@ -8,13 +8,17 @@ import cv2
 import numpy as np
 import io
 import re
-from concurrent.futures import ThreadPoolExecutor, as_completed
+
+# Rate limiting for Gemini Free Tier: 15 requests/minute = 1 request every 4 seconds
+BATCH_SIZE = 9  # Number of images to analyze per API call
+REQUEST_DELAY_SECONDS = 4  # Delay between API requests to stay within free tier limits
 
 class ImageAnalyzer:
     def __init__(self, api_key):
         genai.configure(api_key=api_key)
-        self.model_name = self._get_best_model() # Dynamic Selection
+        self.model_name = self._get_best_model()
         self.model = genai.GenerativeModel(self.model_name)
+        self.last_request_time = 0
     
     def _get_best_model(self):
         try:
@@ -24,9 +28,9 @@ class ImageAnalyzer:
                 if 'generateContent' in m.supported_generation_methods:
                     available_models.append(m.name)
             
-            # Priority list
+            # Priority list - prefer flash models for speed and cost
             priorities = [
-                'models/gemini-1.5-flash-001', # Stable
+                'models/gemini-1.5-flash-001',
                 'models/gemini-1.5-flash',
                 'models/gemini-1.5-flash-latest',
                 'models/gemini-1.5-pro',
@@ -38,7 +42,6 @@ class ImageAnalyzer:
                     print(f"✅ Selected Model: {p}")
                     return p
             
-            # Fallbacks
             for m in available_models:
                 if 'flash' in m: return m
             
@@ -50,135 +53,192 @@ class ImageAnalyzer:
         
         return 'gemini-1.5-flash-001'
 
-    def _prepare_image_for_api(self, file_path, size=480, fmt="WEBP"):
-        """Optimizes image for API (Micro-Proxy Strategy) - Speed & Cost"""
+    def _prepare_image_for_api(self, file_path, size=400, fmt="WEBP"):
+        """Optimizes image for API - smaller size for batch processing"""
         try:
             with PIL.Image.open(file_path) as img:
                 if img.mode != 'RGB': img = img.convert('RGB')
                 if max(img.size) > size: img.thumbnail((size, size))
                 buf = io.BytesIO()
-                img.save(buf, format=fmt, quality=50) # Low quality enough for detection
+                img.save(buf, format=fmt, quality=40)  # Lower quality for batch
                 return buf.getvalue()
         except:
-             with open(file_path, "rb") as f: return f.read()
+            with open(file_path, "rb") as f: return f.read()
 
-    def _process_single_image(self, file_info):
-        """
-        Robust Processor: Math Gatekeeper -> AI Micro-Proxy -> Fail-Open.
-        """
-        file, source_folder, final_dest_dir, rejected_dir, prompt_unused = file_info
-        
-        full_path = os.path.join(source_folder, file)
-        filename = file
-        
-        decision = "keep" # Default Bias
-        reason = "Init"
-        final_path = full_path
+    def _wait_for_rate_limit(self):
+        """Ensures we wait at least REQUEST_DELAY_SECONDS between API calls"""
+        elapsed = time.time() - self.last_request_time
+        if elapsed < REQUEST_DELAY_SECONDS:
+            wait_time = REQUEST_DELAY_SECONDS - elapsed
+            print(f"⏳ Rate limit: waiting {wait_time:.1f}s...")
+            time.sleep(wait_time)
+        self.last_request_time = time.time()
 
+    def _local_math_check(self, file_path, file_name):
+        """
+        Local gatekeeper using math - filters obvious garbage without API calls.
+        Returns (should_skip, decision, reason) - if should_skip is True, skip API.
+        """
         try:
-            # --- PHASE 1: LOCAL GATEKEEPER (Math) ---
-            try:
-                # Use CV2 for fast pixel analysis
-                pil_img = PIL.Image.open(full_path)
-                if pil_img.mode != 'RGB': pil_img = pil_img.convert('RGB')
-                img_np = np.array(pil_img) 
-                
-                # Solid Color Check (Wall, Lens Cap, Floor Close-up)
-                if img_np.std() < 15.0: # Threshold for "Flatness"
-                    print(f"File: {file} -> Trash (Math: Solid Color)")
-                    return self._finalize(file, "trash", "Solid Color (Math)", full_path, rejected_dir)
-                
-                # Blur Check (Laplacian)
-                gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
-                blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
-                if blur_score < 30.0: # Very blurry
-                    print(f"File: {file} -> Trash (Math: Blurry {blur_score:.1f})")
-                    return self._finalize(file, "trash", f"Blurry ({blur_score:.1f})", full_path, rejected_dir)
-
-            except Exception as e:
-                print(f"Math Check Error: {e}")
-                # Continue to AI if Math fails
-
-            # --- PHASE 2: AI MICRO-PROXY ---
-            proxy_bytes = self._prepare_image_for_api(full_path)
+            pil_img = PIL.Image.open(file_path)
+            if pil_img.mode != 'RGB': pil_img = pil_img.convert('RGB')
+            img_np = np.array(pil_img)
             
-            # KEEP-BIASED Prompt (Merchandising Auditor)
-            ai_prompt = """Role: Merchandising Auditor.
-Task: Filter GARBAGE vs CONTENT.
+            # Solid Color Check
+            if img_np.std() < 15.0:
+                print(f"📐 {file_name} -> Trash (Math: Solid Color)")
+                return (True, "trash", "Solid Color (Math)")
+            
+            # Blur Check (Laplacian)
+            gray = cv2.cvtColor(img_np, cv2.COLOR_RGB2GRAY)
+            blur_score = cv2.Laplacian(gray, cv2.CV_64F).var()
+            if blur_score < 30.0:
+                print(f"📐 {file_name} -> Trash (Math: Blurry {blur_score:.1f})")
+                return (True, "trash", f"Blurry ({blur_score:.1f})")
+            
+            return (False, None, None)
+            
+        except Exception as e:
+            print(f"Math Check Error for {file_name}: {e}")
+            return (False, None, None)
+
+    def _process_batch_with_ai(self, batch_files, source_folder):
+        """
+        Process a batch of images with a single API call.
+        Returns dict mapping filename -> (decision, reason)
+        """
+        if not batch_files:
+            return {}
+        
+        results = {}
+        
+        # Prepare all images for the batch
+        image_parts = []
+        file_names = []
+        
+        for file_name in batch_files:
+            full_path = os.path.join(source_folder, file_name)
+            try:
+                proxy_bytes = self._prepare_image_for_api(full_path)
+                image_parts.append({'mime_type': 'image/webp', 'data': proxy_bytes})
+                file_names.append(file_name)
+            except Exception as e:
+                print(f"Error preparing {file_name}: {e}")
+                results[file_name] = ("keep", f"Prep Error: {str(e)}")
+        
+        if not file_names:
+            return results
+        
+        # Build batch prompt
+        batch_prompt = f"""Role: Merchandising Auditor.
+Task: Analyze {len(file_names)} images and filter GARBAGE vs CONTENT.
 
 RULES:
 1. KEEP (Pass):
-   - Retail Shelves (Full or Empty).
-   - Products (Bottles, Boxes, Jars).
-   - Pallets, Cardboard Displays, Coolers.
-   - Receipts, Documents, Screens.
-   - Store Interior (Floor + Shelves).
-   **IF UNCERTAIN/BLURRY BUT SHOWS SHELF -> KEEP.**
+   - Retail Shelves (Full or Empty)
+   - Products (Bottles, Boxes, Jars)
+   - Pallets, Cardboard Displays, Coolers
+   - Receipts, Documents, Screens
+   - Store Interior (Floor + Shelves)
+   **IF UNCERTAIN/BLURRY BUT SHOWS SHELF -> KEEP**
 
 2. TRASH (Reject):
-   - Solid Black/White/Red Screen.
-   - Floor TILES ONLY (No products).
-   - Ceiling ONLY.
-   - Building Exterior / Street.
-   - Accidental shots (Inside pocket, Shoes only).
+   - Solid Black/White/Red Screen
+   - Floor TILES ONLY (No products)
+   - Ceiling ONLY
+   - Building Exterior / Street
+   - Accidental shots (Inside pocket, Shoes only)
 
-Return JSON: {"decision": "keep" or "trash", "reason": "short explanation"}"""
+IMAGE LIST (in order):
+{chr(10).join([f'{i+1}. {name}' for i, name in enumerate(file_names)])}
 
-            retries = 3
-            for attempt in range(retries):
+Return JSON array with decisions for each image IN ORDER:
+[
+  {{"file": "filename1.jpg", "decision": "keep", "reason": "short explanation"}},
+  {{"file": "filename2.jpg", "decision": "trash", "reason": "short explanation"}}
+]"""
+
+        # Wait for rate limit
+        self._wait_for_rate_limit()
+        
+        retries = 3
+        for attempt in range(retries):
+            try:
+                # Build content list: prompt first, then all images
+                content = [batch_prompt] + image_parts
+                
+                print(f"🤖 Sending batch of {len(file_names)} images to Gemini...")
+                response = self.model.generate_content(
+                    content,
+                    request_options={'timeout': 60}  # Longer timeout for batch
+                )
+                
+                text = response.text
+                clean = text.replace("```json", "").replace("```", "").strip()
+                
                 try:
-                    response = self.model.generate_content(
-                        [ai_prompt, {'mime_type': 'image/webp', 'data': proxy_bytes}],
-                        request_options={'timeout': 25}
-                    )
-                    text = response.text
-                    clean = text.replace("```json", "").replace("```", "").strip()
-                    
-                    try:
-                        res_json = json.loads(clean)
-                    except:
-                        match = re.search(r'\{.*\}', clean, re.DOTALL)
-                        if match: 
-                            res_json = json.loads(match.group(0))
-                        else:
-                            # Parse manually or default
-                            if "trash" in clean.lower() and "keep" not in clean.lower():
-                                res_json = {"decision": "trash", "reason": "AI Text says trash"}
-                            else:
-                                res_json = {"decision": "keep", "reason": "AI Parse Error (Default Keep)"}
-
-                    decision = res_json.get("decision", "keep").lower()
-                    if decision not in ["keep", "trash"]: decision = "keep"
-                    
-                    reason = "AI: " + res_json.get("reason", "Decision")
-                    print(f"File: {file} -> {decision.upper()} | {reason}")
-                    
-                    if decision == "keep":
-                         return self._finalize(file, "keep", reason, full_path, final_dest_dir)
+                    res_array = json.loads(clean)
+                except:
+                    # Try to extract JSON array
+                    match = re.search(r'\[.*\]', clean, re.DOTALL)
+                    if match:
+                        res_array = json.loads(match.group(0))
                     else:
-                         return self._finalize(file, "trash", reason, full_path, rejected_dir)
-
-                except Exception as e:
-                    print(f"AI Attempt {attempt+1} Error: {e}")
-                    if attempt == retries - 1:
-                        # Fail Open on last error
-                        return self._finalize(file, "keep", f"AI Error (Safe Keep): {str(e)}", full_path, final_dest_dir)
-                    time.sleep(1)
-
-        except Exception as e:
-            # Global Fail Open
-            return self._finalize(file, "keep", f"Sys Error: {str(e)}", full_path, final_dest_dir)
+                        # Fallback - try to parse individual objects
+                        res_array = []
+                        for m in re.finditer(r'\{[^}]+\}', clean):
+                            try:
+                                res_array.append(json.loads(m.group(0)))
+                            except:
+                                pass
+                
+                # Map results back to filenames
+                for item in res_array:
+                    file_key = item.get("file", "")
+                    decision = item.get("decision", "keep").lower()
+                    reason = item.get("reason", "AI Decision")
+                    
+                    if decision not in ["keep", "trash"]:
+                        decision = "keep"
+                    
+                    # Try exact match first
+                    if file_key in file_names:
+                        results[file_key] = (decision, f"AI: {reason}")
+                        print(f"✅ {file_key} -> {decision.upper()} | {reason}")
+                    else:
+                        # Try partial match
+                        for fn in file_names:
+                            if fn not in results and (file_key in fn or fn in file_key):
+                                results[fn] = (decision, f"AI: {reason}")
+                                print(f"✅ {fn} -> {decision.upper()} | {reason}")
+                                break
+                
+                # Handle any files not in results (default to keep)
+                for fn in file_names:
+                    if fn not in results:
+                        results[fn] = ("keep", "AI: No explicit decision (Safe Keep)")
+                        print(f"⚠️ {fn} -> KEEP (No AI response)")
+                
+                return results
+                
+            except Exception as e:
+                print(f"❌ Batch AI Attempt {attempt+1} Error: {e}")
+                if attempt == retries - 1:
+                    # Fail open - keep all images
+                    for fn in file_names:
+                        if fn not in results:
+                            results[fn] = ("keep", f"AI Error (Safe Keep): {str(e)}")
+                    return results
+                time.sleep(2)
+        
+        return results
 
     def _finalize(self, file, decision, reason, src_path, dest_dir):
         """Moves file and returns dict"""
         try:
             dest_path = os.path.join(dest_dir, file)
-            # Use copy instead of move if you want safety, but original code moved.
-            # Using Move to clear source is standard for sorting.
             if os.path.abspath(src_path) != os.path.abspath(dest_path):
-                shutil.copy2(src_path, dest_path) # Changed to Copy for safety during testing? User wanted Sort.
-                # Let's stick to copy2 for safety and "Auto report maker" usually copies to temp_sorted.
-                # Actually, `main.py` expects files in `current_sorted_target`.
+                shutil.copy2(src_path, dest_path)
             
             return {
                 "file": file,
@@ -196,13 +256,14 @@ Return JSON: {"decision": "keep" or "trash", "reason": "short explanation"}"""
 
     def analyze_and_sort_generator(self, source_folder, final_dest_dir, rejected_dest_dir=None):
         """
-        Yields analysis results for each image using ThreadPoolExecutor for speed.
-        (Maintains interface for main.py)
+        Yields analysis results for each image using BATCH processing.
+        Optimized for Gemini Free Tier: 15 requests/minute.
+        Processes 9-10 images per API call with 4s delay between calls.
         """
         if rejected_dest_dir:
-             rejected_dir = rejected_dest_dir
+            rejected_dir = rejected_dest_dir
         else:
-             rejected_dir = os.path.join(source_folder, "Rejected")
+            rejected_dir = os.path.join(source_folder, "Rejected")
 
         if not os.path.exists(rejected_dir): os.makedirs(rejected_dir)
         if not os.path.exists(final_dest_dir): os.makedirs(final_dest_dir)
@@ -210,52 +271,76 @@ Return JSON: {"decision": "keep" or "trash", "reason": "short explanation"}"""
         files = [f for f in os.listdir(source_folder) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.webp'))]
         total = len(files)
         
-        # Max Workers from inspiration = Async Semaphore 40. 
-        # Here we use Threads. 40 might be too high for Python threads + Networking without AsyncIO.
-        # But `process_single_image` does mostly blocking I/O (Math/Net).
-        # Let's bump to 10 for speed.
-        max_workers = 10
+        if total == 0:
+            return
         
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            future_to_file = {}
-            for file in files:
-                full_path_src = os.path.join(source_folder, file)
-                # Pass None for prompt implies inside logic handles it
-                file_info = (file, source_folder, final_dest_dir, rejected_dir, None)
-                future = executor.submit(self._process_single_image, file_info)
-                future_to_file[future] = (file, full_path_src, final_dest_dir)
-
-            finished_count = 0
+        print(f"\n📊 Processing {total} images in batches of {BATCH_SIZE}")
+        print(f"⏱️ Rate limit: {REQUEST_DELAY_SECONDS}s between API calls (Free Tier)")
+        
+        finished_count = 0
+        
+        # First pass: Local math checks (no API calls)
+        files_for_ai = []
+        math_results = {}
+        
+        print("\n📐 Phase 1: Local math filtering...")
+        for file in files:
+            full_path = os.path.join(source_folder, file)
+            should_skip, decision, reason = self._local_math_check(full_path, file)
             
-            for future in as_completed(future_to_file):
-                file_name, src_path, dest_dir_keep = future_to_file[future]
-                try:
-                    res = future.result(timeout=45) # Longer timeout for 10 threads
-                    finished_count += 1
-                    yield {
-                        "current": finished_count,
-                        "total": total,
-                        "file": res['file'],
-                        "decision": res['decision'],
-                        "reason": res.get('reason', 'N/A'),
-                        "path": res['path']
-                    }
-                except TimeoutError:
-                    finished_count += 1
-                    # FAIL OPEN
-                    final_dest_path = os.path.join(dest_dir_keep, file_name)
-                    try: shutil.copy2(src_path, final_dest_path)
-                    except: pass
-                    yield {
-                        "current": finished_count, "total": total, "file": file_name,
-                        "decision": "keep", "reason": "Timeout (Safe Keep)", "path": final_dest_path
-                    }
-                except Exception as e:
-                    finished_count += 1
-                    final_dest_path = os.path.join(dest_dir_keep, file_name)
-                    try: shutil.copy2(src_path, final_dest_path)
-                    except: pass
-                    yield {
-                        "current": finished_count, "total": total, "file": file_name,
-                        "decision": "keep", "reason": f"Sys Error {str(e)}", "path": final_dest_path
-                    }
+            if should_skip:
+                math_results[file] = (decision, reason, full_path)
+            else:
+                files_for_ai.append(file)
+        
+        print(f"📐 Math filtered: {len(math_results)} images rejected locally")
+        print(f"🤖 Sending {len(files_for_ai)} images to AI in batches...")
+        
+        # Yield math-filtered results first
+        for file, (decision, reason, full_path) in math_results.items():
+            finished_count += 1
+            dest_dir = rejected_dir if decision == "trash" else final_dest_dir
+            result = self._finalize(file, decision, reason, full_path, dest_dir)
+            yield {
+                "current": finished_count,
+                "total": total,
+                "file": result['file'],
+                "decision": result['decision'],
+                "reason": result['reason'],
+                "path": result['path']
+            }
+        
+        # Second pass: AI batch processing
+        for i in range(0, len(files_for_ai), BATCH_SIZE):
+            batch = files_for_ai[i:i + BATCH_SIZE]
+            batch_num = (i // BATCH_SIZE) + 1
+            total_batches = (len(files_for_ai) + BATCH_SIZE - 1) // BATCH_SIZE
+            
+            print(f"\n🔄 Processing batch {batch_num}/{total_batches} ({len(batch)} images)...")
+            
+            # Process batch with AI
+            ai_results = self._process_batch_with_ai(batch, source_folder)
+            
+            # Yield results for this batch
+            for file in batch:
+                finished_count += 1
+                full_path = os.path.join(source_folder, file)
+                
+                if file in ai_results:
+                    decision, reason = ai_results[file]
+                else:
+                    decision, reason = "keep", "No AI response (Safe Keep)"
+                
+                dest_dir = rejected_dir if decision == "trash" else final_dest_dir
+                result = self._finalize(file, decision, reason, full_path, dest_dir)
+                
+                yield {
+                    "current": finished_count,
+                    "total": total,
+                    "file": result['file'],
+                    "decision": result['decision'],
+                    "reason": result['reason'],
+                    "path": result['path']
+                }
+        
+        print(f"\n✅ Completed processing {total} images")
